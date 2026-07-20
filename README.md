@@ -33,6 +33,27 @@ For the motion blur problem, clone the repository below.
 git clone https://github.com/LeviBorodenko/motionblur.git
 ```
 
++) Download datasets as below
+```
+wget -c http://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_train_HR.zip ;
+unzip -q DIV2K_train_HR.zip
+```
+```
+    wget -N https://www.dropbox.com/s/t9l9o3vsx2jai3z/afhq.zip?dl=0 -O afhq.zip ;
+    unzip afhq.zip ;
+    rm afhq.zip
+```
+```
+git clone https://github.com/NVlabs/ffhq-dataset.git ;
+cd ffhq-dataset ;
+unfunction gdown ;
+python -m pip install -U gdown ;
+python -m gdown \
+  16N0RV4fHI6joBuKbQAoG34V_cQk7vxSA \
+  -O ffhq-dataset-v2.json ; 
+python ffhq-dataset/download_ffhq.py -i;
+```
+
 ### Examples
 
 You can quickly check the results using the following examples.
