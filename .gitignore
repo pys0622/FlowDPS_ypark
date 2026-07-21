@@ -179,6 +179,8 @@ docker-compose.override.yml
 /src/clip/
 /checkpoints/
 /dataset/
+/datasets/
+/experiments/
 
 *.pt
 *.pth

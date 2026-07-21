@@ -74,14 +74,37 @@ def run(args):
         transforms.ToTensor()
         ])
 
-    pbar = tqdm(get_img_list(args.img_path), desc="Solving")
-    for i, path in enumerate(pbar):
-        img = tf(Image.open(path).convert('RGB'))
-        img = img.unsqueeze(0).to(solver.vae.device)
-        img = img * 2 - 1
+    if args.measurement_path is not None:
+            paths = sorted(args.measurement_path.glob('*.pt'))
+            dummy = torch.zeros(
+                1, 3, args.img_size, args.img_size,
+                device=solver.transformer.device
+            )
 
-        y = operator.A(img)
-        y = y + 0.03 * torch.randn_like(y)
+            dummy_y = operator.A(dummy)
+            measurement_dtype = dummy_y.dtype
+    else:
+            paths = get_img_list(args.img_path)
+    pbar = tqdm(paths, desc="Solving")
+    
+    for i, path in enumerate(pbar):
+        if args.measurement_path is not None:
+            data = torch.load(path, map_location = solver.vae.device)
+            y = data["measurement"]
+            if y.ndim ==3:
+                y = y.unsqueeze(0)
+            y = y.to(
+                device = solver.vae.device,
+                dtype = measurement_dtype,
+            )
+            img = None
+        else:
+            img = tf(Image.open(path).convert('RGB'))
+            img = img.unsqueeze(0).to(solver.vae.device)
+            img = img * 2 - 1
+
+            y = operator.A(img)
+            y = y + 0.03 * torch.randn_like(y)
 
         out = solver.sample(measurement=y,
                             operator=operator,
@@ -95,15 +118,16 @@ def run(args):
                             null_emb=null_embs
                             )
         # save results
-        save_image(operator.At(y).reshape(img.shape),
+        save_image(operator.At(y).reshape(out.shape),
                    args.workdir.joinpath(f'input/{str(i).zfill(4)}.png'),
                    normalize=True)
         save_image(out,
                    args.workdir.joinpath(f'recon/{str(i).zfill(4)}.png'),
                    normalize=True)
-        save_image(img,
-                   args.workdir.joinpath(f'label/{str(i).zfill(4)}.png'),
-                   normalize=True)
+        if img is not None:
+            save_image(img,
+                    args.workdir.joinpath(f'label/{str(i).zfill(4)}.png'),
+                    normalize=True)
 
         if (i+1) == args.num_samples:
             break
@@ -125,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument('--prompt', type=str, default=None)
     parser.add_argument('--prompt_file', type=str, default=None)
     parser.add_argument('--num_samples', type=int, default=-1)
+    parser.add_argument('--measurement_path', type=Path, default=None)
 
     # problem params
     parser.add_argument('--task', type=str, default='sr_avgpool')
