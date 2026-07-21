@@ -5,6 +5,7 @@ import torch
 from munch import munchify
 from PIL import Image
 from torchvision import transforms
+from torchvision.utils import save_image
 from tqdm import tqdm
 
 from util import get_img_list, set_seed
@@ -58,6 +59,11 @@ def main():
         type=str,
         default="cuda",
     )
+    
+    parser.add_argument(
+        "--save_preview",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -75,10 +81,19 @@ def main():
         / "measurement"
         / measurement_name
     )
+    preview_dir = (
+        dataset_root
+        /"measurement_preview"
+        / measurement_name
+    )
 
     measurement_dir.mkdir(
         parents=True,
         exist_ok=True,
+    )
+    preview_dir.mkdir(
+        parents = True,
+        exist_ok = True
     )
 
     deg_config = munchify(
@@ -121,6 +136,12 @@ def main():
             },
             measurement_dir / f"{idx:05d}.pt",
         )
+        if args.save_preview:
+            save_image(
+                operator.At(y).reshape(img.shape),
+                preview_dir / f"{idx:05d}.png",
+                normalize = True,
+            )
 
     print(f"Saved {len(image_list)} measurements to")
     print(measurement_dir)
