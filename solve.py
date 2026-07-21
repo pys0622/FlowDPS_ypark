@@ -76,6 +76,13 @@ def run(args):
 
     if args.measurement_path is not None:
             paths = sorted(args.measurement_path.glob('*.pt'))
+            dummy = torch.zeros(
+                1, 3, args.img_size, args.img_size,
+                device=solver.transformer.device
+            )
+
+            dummy_y = operator.A(dummy)
+            measurement_dtype = dummy_y.dtype
     else:
             paths = get_img_list(args.img_path)
     pbar = tqdm(paths, desc="Solving")
@@ -88,7 +95,7 @@ def run(args):
                 y = y.unsqueeze(0)
             y = y.to(
                 device = solver.vae.device,
-                dtype = solver.transformer.dtype,
+                dtype = measurement_dtype,
             )
             img = None
         else:
