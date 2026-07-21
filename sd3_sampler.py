@@ -301,8 +301,9 @@ class SD3FlowDPS(SD3Euler):
         sigmas = timesteps / self.scheduler.config.num_train_timesteps
 
         # Solve ODE
-        pbar = tqdm(timesteps, total=NFE, desc='SD3-FlowDPS')
-        for i, t in enumerate(pbar):
+        # pbar = tqdm(timesteps, total=NFE, desc='SD3-FlowDPS')
+        # for i, t in enumerate(pbar):
+        for i, t in enumerate(timesteps):
             timestep = t.expand(z.shape[0]).to(self.device)
 
             with torch.no_grad():

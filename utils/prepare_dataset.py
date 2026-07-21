@@ -52,31 +52,6 @@ def select_first(files, count):
     return files[:count]
 
 
-def select_balanced_afhq(root: Path, count: int, seed: int):
-    class_names = ["cat", "dog", "wild"]
-
-    base_count = count // len(class_names)
-    remainder = count % len(class_names)
-
-    selected = []
-
-    for class_index, class_name in enumerate(class_names):
-        class_dir = root / class_name
-        class_files = get_images(class_dir)
-
-        class_count = base_count + (1 if class_index < remainder else 0)
-
-        # 클래스마다 별도 seed를 사용해 결정성을 보장
-        class_selected = select_random(
-            class_files,
-            class_count,
-            seed + class_index,
-        )
-        selected.extend(class_selected)
-
-    return sorted(selected)
-
-
 def main():
     parser = argparse.ArgumentParser()
 
@@ -95,6 +70,12 @@ def main():
         "--ffhq_validation_only",
         action="store_true",
     )  
+
+    parser.add_argument(
+        "--afhq_catndog_only",
+        action="store_true",
+        help="Use only images under AFHQ cat and dog directories.",
+    )
 
     parser.add_argument(
         "--resize_mode",
@@ -122,6 +103,20 @@ def main():
                 filtered.append(path)
 
         all_files = filtered
+    
+    if args.afhq_catndog_only:
+        filtered = []
+
+        for path in all_files:
+            try:
+                class_name = path.relative_to(args.input).parts[0]
+            except ValueError:
+                continue
+            
+            if class_name in {"cat", "dog"}:
+                filtered.append(path)
+
+        all_files = filtered
 
     if args.selection == "random":
         selected = select_random(
@@ -133,12 +128,6 @@ def main():
         selected = select_first(
             all_files,
             args.num_samples,
-        )
-    elif args.selection == "balanced_afhq":
-        selected = select_balanced_afhq(
-            args.input,
-            args.num_samples,
-            args.seed,
         )
     else:
         raise ValueError(f"Unknown selection mode: {args.selection}")

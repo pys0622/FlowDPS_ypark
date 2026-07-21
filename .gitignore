@@ -180,6 +180,7 @@ docker-compose.override.yml
 /checkpoints/
 /dataset/
 /datasets/
+/experiments/
 
 *.pt
 *.pth

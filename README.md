@@ -59,8 +59,9 @@ python utils/prepare_dataset.py \
   --output datasets/prepared/AFHQ_val1000 \
   --num_samples 1000 \
   --seed 0 \
-  --selection balanced_afhq \
+  --selection first \
   --resize_mode flowdps \
+  --afhq_catndog_only \
   --img_size 768
 ```
 ```
@@ -84,7 +85,65 @@ python utils/prepare_dataset.py \
   --resize_mode flowdps \
   --img_size 768
 ```
+### +) Save Measurement as .pt
+```
+python -m utils.prepare_measurement \
+    --img_path datasets/prepared/{AFHQ_val1000, DIV2K_train800, FFHQ_val1000}/images \
+    --task sr_avgpool \
+    --deg_scale 12 \
+    --noise_std 0.03 \
+    --seed 0
+```
+```
+python -m utils.prepare_measurement \
+    --img_path datasets/prepared/{AFHQ_val1000, DIV2K_train800, FFHQ_val1000}/images \
+    --task sr_bicubic \
+    --deg_scale 12 \
+    --noise_std 0.03 \
+    --seed 0
+```
+```
+python -m utils.prepare_measurement \
+    --img_path datasets/prepared/{AFHQ_val1000, DIV2K_train800, FFHQ_val1000}/images \
+    --task deblur_motion \
+    --deg_scale 61 \
+    --noise_std 0.03 \
+    --seed 0
+```
 
+
+### +) Extract Prompt Based on Image Menifest File/ Measurement
+```
+python utils/prepare_prompt.py \
+    --dataset AFHQ \
+    --manifest datasets/prepared/AFHQ_val1000/manifest.json \
+    --output datasets/prepared/AFHQ_val1000/prompts.txt
+```
+```
+python utils/prepare_prompt.py \
+    --dataset FFHQ \
+    --manifest datasets/prepared/FFHQ_val1000/manifest.json \
+    --output datasets/prepared/FFHQ_val1000/prompts.txt
+```
+```
+python utils/prepare_prompt.py \
+    --dataset DIV2K \
+    --manifest datasets/prepared/DIV2K_train800/manifest.json \
+    --measurement_dir experiments/div2k_sr12/measurement \
+    --output datasets/prepared/DIV2K_train800/prompts.txt
+```
+
+### +) Call Solver for Precalculated Measurements
+```
+python solve.py \
+    --workdir experiments/0721_afhq_sr_avgpool \
+    --measurement_path datasets/prepared/AFHQ_val1000/measurement/sr_avgpool_x12 \
+    --num_samples 10 \
+    --prompt_file datasets/prepared/AFHQ_val1000/prompts.txt \
+    --task sr_avgpool \
+    --deg_scale 12 \
+    --efficient_memory;
+```
 
 ### Examples
 
