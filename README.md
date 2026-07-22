@@ -113,6 +113,25 @@ python -m utils.prepare_measurement \
 Add --save_preview for DIV2K, in order to save input image for prompt generation
 
 ### +) Extract Prompt Based on Image Menifest File/ Measurement
+####    Installing SeeSR for DAPE prmopmt extraction
+```
+cd .. ;
+git clone https://github.com/cswry/SeeSR.git ;
+cd SeeSR ;
+pip install pytorch_lightning \
+    loralib \
+    fairscale \
+    pydantic==1.10.11 \
+    gradio==3.24.0 \
+    timm ;
+mkdir -p preset/models ;
+wget -O preset/models/ram_swin_large_14m.pth \
+    https://huggingface.co/xinyu1205/recognize_anything_model/resolve/main/ram_swin_large_14m.pth ;
+python -m gdown 127swnIotVkbl2nDnrXBpKtx4_AnFMhtR \
+    -O preset/models/DAPE.pth
+```
+####    CLI for extraction
+
 ```
 python utils/prepare_prompt.py \
     --dataset AFHQ \
@@ -129,8 +148,25 @@ python utils/prepare_prompt.py \
 python utils/prepare_prompt.py \
     --dataset DIV2K \
     --manifest datasets/prepared/DIV2K_train800/manifest.json \
-    --measurement_dir experiments/div2k_sr12/measurement \
-    --output datasets/prepared/DIV2K_train800/prompts.txt
+    --measurement_preview_dir datasets/prepared/DIV2K_train800/measurement_preview/deblur_motion \
+    --seesr_root ../SeeSR \
+    --output datasets/prepared/DIV2K_train800/prompts_deblur_motion.txt \
+		| tee datasets/prepared/DIV2K_train800/prepare_prompt.deblur_motion.log ;
+python utils/prepare_prompt.py \
+    --dataset DIV2K \
+    --manifest datasets/prepared/DIV2K_train800/manifest.json \
+    --measurement_preview_dir datasets/prepared/DIV2K_train800/measurement_preview/sr_avgpool_x12 \
+    --seesr_root ../SeeSR \
+    --output datasets/prepared/DIV2K_train800/prompts_sr_avgpool_x12.txt \
+		| tee datasets/prepared/DIV2K_train800/prepare_prompt.sr_avgpool_x12.log ;
+		
+python utils/prepare_prompt.py \
+    --dataset DIV2K \
+    --manifest datasets/prepared/DIV2K_train800/manifest.json \
+    --measurement_preview_dir datasets/prepared/DIV2K_train800/measurement_preview/sr_bicubic_x12 \
+    --seesr_root ../SeeSR \
+    --output datasets/prepared/DIV2K_train800/prompts_sr_bicubic_x12.txt \
+		| tee datasets/prepared/DIV2K_train800/prepare_prompt.sr_bicubic_x12.log ;
 ```
 
 ### +) Inference for Precalculated Measurements
@@ -148,8 +184,19 @@ python solve.py \
 ```
 python eval.py \
     --path1 datasets/prepared/AFHQ_val1000/images \
-    --path2 experiments/0721_afhq_deblur_motion/recon 
+    --path2 experiments/0721_afhq_deblur_motion/recon \
     --metric psnr ssim fid lpips ;
+```
+For DIV2K, degradation-aware prompts are used. Therefore, prompts file path depends on measurement.
+```
+python solve.py \
+    --workdir experiments/0722_div2k_sr_avgpool \
+    --measurement_path datasets/prepared/DIV2K_train800/measurement/sr_avgpool_x12 \
+    --num_samples 800 \
+    --prompt_file datasets/prepared/DIV2K_train800/prompts_sr_avgpool_x12.txt \
+    --task sr_avgpool \
+    --deg_scale 12 \
+    --efficient_memory;
 ```
 
 ### Examples

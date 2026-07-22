@@ -3,6 +3,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import sys
+import torch
+from PIL import Image
+from torchvision import transforms
+from tqdm import tqdm
+
 
 AFHQ_PROMPTS = {
     "cat": "a photo of a closed face of a cat",
@@ -79,137 +85,206 @@ def prepare_ffhq(manifest: dict[str, Any]) -> list[str]:
     return [FFHQ_PROMPT] * len(manifest["samples"])
 
 
-def load_div2k_descriptions(path: Path) -> dict[str, str]:
+
+#Methods copied from SeeSR project
+def load_tag_model(
+    seesr_root: Path,
+    device: torch.device,
+) -> torch.nn.Module:
     """
-    Load DAPE descriptions from a text file.
-
-    Supported line formats:
-
-        00001.png: a mountain, trees, and a lake
-        00001: a mountain, trees, and a lake
-        a mountain, trees, and a lake
-
-    Lines containing filenames or indices are matched by image stem.
-    Lines without a key are treated as ordered descriptions.
+    Load the RAM model with SeeSR's DAPE condition weights.
     """
-    if not path.is_file():
+
+    seesr_root = seesr_root.resolve()
+
+    if not seesr_root.is_dir():
         raise FileNotFoundError(
-            f"DIV2K description file does not exist: {path}"
+            f"SeeSR repository does not exist: {seesr_root}"
         )
 
-    descriptions: dict[str, str] = {}
-    ordered_descriptions: list[str] = []
+    ram_path = (
+        seesr_root
+        / "preset"
+        / "models"
+        / "ram_swin_large_14m.pth"
+    )
 
-    with path.open("r", encoding="utf-8") as file:
-        for line_number, raw_line in enumerate(file, start=1):
-            line = raw_line.strip()
+    dape_path = (
+        seesr_root
+        / "preset"
+        / "models"
+        / "DAPE.pth"
+    )
 
-            if not line:
-                continue
-
-            if ": " in line:
-                key, description = line.split(": ", maxsplit=1)
-                key = Path(key.strip()).stem
-                description = description.strip()
-
-                if not key:
-                    raise ValueError(
-                        f"Empty key at {path}:{line_number}"
-                    )
-
-                if key in descriptions:
-                    raise ValueError(
-                        f"Duplicate DIV2K description key '{key}' "
-                        f"at {path}:{line_number}"
-                    )
-
-                descriptions[key] = description
-            else:
-                ordered_descriptions.append(line)
-
-    if descriptions and ordered_descriptions:
-        raise ValueError(
-            "DIV2K description file mixes keyed and ordered lines. "
-            "Use either 'filename: description' for every line or "
-            "one plain description per line."
+    if not ram_path.is_file():
+        raise FileNotFoundError(
+            f"RAM checkpoint does not exist: {ram_path}"
         )
 
-    if descriptions:
-        return descriptions
+    if not dape_path.is_file():
+        raise FileNotFoundError(
+            f"DAPE checkpoint does not exist: {dape_path}"
+        )
 
-    return {
-        str(index): description
-        for index, description in enumerate(ordered_descriptions)
-    }
+    seesr_root_str = str(seesr_root)
 
+    if seesr_root_str not in sys.path:
+        sys.path.insert(0, seesr_root_str)
 
-def format_div2k_prompt(description: str) -> str:
-    description = description.strip().rstrip(".")
+    from ram.models.ram_lora import ram
 
-    if not description:
-        return "a high quality photo"
+    model = ram(
+        pretrained=str(ram_path),
+        pretrained_condition=str(dape_path),
+        image_size=384,
+        vit="swin_l",
+    )
 
-    lowered = description.lower()
+    model.eval()
+    model.to(device)
 
-    if lowered.startswith("a high quality photo"):
-        return description
+    return model
 
-    return f"a high quality photo of {description}"
+def get_validation_prompt(
+    image: Image.Image,
+    model: torch.nn.Module,
+    device: torch.device,
+) -> str:
+    """
+    Extract a DAPE tag string from a measurement preview image.
+
+    This follows SeeSR's test_seesr.py preprocessing:
+        PIL image
+        -> ToTensor
+        -> batch dimension
+        -> Resize(384, 384)
+        -> ImageNet normalization
+        -> inference_ram
+
+    Only the tag string is returned. No quality prefix is added here.
+    """
+    from ram import inference_ram as inference
+
+    tensor_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+        ]
+    )
+
+    ram_transform = transforms.Compose(
+        [
+            transforms.Resize((384, 384)),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225],
+            ),
+        ]
+    )
+
+    image_tensor = tensor_transform(image)
+    image_tensor = image_tensor.unsqueeze(0).to(device)
+    image_tensor = ram_transform(image_tensor)
+
+    with torch.inference_mode():
+        result = inference(image_tensor, model)
+
+    if not isinstance(result, (list, tuple)):
+        raise TypeError(
+            "Unexpected RAM inference result type: "
+            f"{type(result).__name__}"
+        )
+
+    if not result:
+        raise RuntimeError(
+            "RAM inference returned an empty result."
+        )
+
+    prompt = str(result[0]).strip()
+
+    if not prompt:
+        return ""
+        # raise RuntimeError(
+        #     "RAM inference returned an empty prompt."
+        # )
+
+    return prompt
 
 
 def prepare_div2k(
     manifest: dict[str, Any],
-    description_file: Path,
+    measurement_preview_dir: Path,
+    seesr_root: Path,
 ) -> list[str]:
-    descriptions = load_div2k_descriptions(description_file)
+    """
+    Generate one DAPE prompt per DIV2K sample.
+
+    Preview images are matched to manifest samples by the sample's
+    'filename' field.
+    """
+    measurement_preview_dir = measurement_preview_dir.resolve()
+
+    if not measurement_preview_dir.is_dir():
+        raise FileNotFoundError(
+            "Measurement preview directory does not exist: "
+            f"{measurement_preview_dir}"
+        )
+
     samples = manifest["samples"]
 
-    keyed_by_filename = any(
-        Path(sample.get("filename", "")).stem in descriptions
-        for sample in samples
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
     )
 
-    prompts = []
+    print(f"DAPE device: {device}")
+    print(f"SeeSR root: {seesr_root.resolve()}")
+    print(
+        "Measurement preview directory: "
+        f"{measurement_preview_dir}"
+    )
 
-    if keyed_by_filename:
-        missing = []
+    model = load_tag_model(
+        seesr_root=seesr_root,
+        device=device,
+    )
 
-        for index, sample in enumerate(samples):
-            filename = sample.get("filename")
+    prompts: list[str] = []
 
-            if not filename:
-                raise ValueError(
-                    f"Sample {index} does not contain 'filename'."
-                )
+    for index, sample in enumerate(
+        tqdm(
+            samples,
+            desc="Extracting DAPE prompts",
+        )
+    ):
+        filename = sample.get("filename")
 
-            stem = Path(filename).stem
-            description = descriptions.get(stem)
-
-            if description is None:
-                missing.append(stem)
-                continue
-
-            prompts.append(format_div2k_prompt(description))
-
-        if missing:
-            preview = ", ".join(missing[:10])
+        if not filename:
             raise ValueError(
-                f"Missing DAPE descriptions for {len(missing)} samples. "
-                f"First missing keys: {preview}"
+                f"Manifest sample {index} does not contain 'filename'."
             )
 
-        return prompts
+        image_path = measurement_preview_dir / filename
 
-    if len(descriptions) != len(samples):
-        raise ValueError(
-            "Ordered DIV2K description count does not match manifest: "
-            f"{len(descriptions)} descriptions for {len(samples)} samples."
-        )
+        if not image_path.is_file():
+            raise FileNotFoundError(
+                f"Measurement preview does not exist for "
+                f"sample {index}: {image_path}"
+            )
 
-    for index in range(len(samples)):
-        prompts.append(
-            format_div2k_prompt(descriptions[str(index)])
-        )
+        with Image.open(image_path) as image:
+            rgb_image = image.convert("RGB")
+
+            prompt = get_validation_prompt(
+                image=rgb_image,
+                model=model,
+                device=device,
+            )
+
+
+        if prompt == "":
+            print(f"[Warning] Empty DAPE prompt: {image_path}")
+            prompt = "high quality"
+
+        prompts.append(prompt)
 
     return prompts
 
@@ -241,6 +316,21 @@ def main() -> None:
         type=Path,
         required=True,
     )
+    
+    parser.add_argument(
+    "--measurement_preview_dir",
+    type=Path,
+    default=None,
+    help="Measurement preview directory generated by prepare_measurement.py",
+    )
+
+    parser.add_argument(
+        "--seesr_root",
+        type=Path,
+        default=None,
+        help="Root directory of the SeeSR repository.",
+    )
+    
 
     parser.add_argument(
         "--output",
@@ -248,15 +338,6 @@ def main() -> None:
         required=True,
     )
 
-    parser.add_argument(
-        "--description_file",
-        type=Path,
-        default=None,
-        help=(
-            "DAPE description file for DIV2K. Required when "
-            "--dataset DIV2K is selected."
-        ),
-    )
 
     args = parser.parse_args()
     manifest = load_manifest(args.manifest)
@@ -268,14 +349,20 @@ def main() -> None:
         prompts = prepare_ffhq(manifest)
 
     elif args.dataset == "DIV2K":
-        if args.description_file is None:
+        if args.measurement_preview_dir is None:
             raise ValueError(
-                "--description_file is required for DIV2K."
+                "--measurement_preview_dir is required for DIV2K."
+            )
+
+        if args.seesr_root is None:
+            raise ValueError(
+                "--seesr_root is required for DIV2K."
             )
 
         prompts = prepare_div2k(
             manifest,
-            args.description_file,
+            args.measurement_preview_dir,
+            args.seesr_root,
         )
 
     else:
