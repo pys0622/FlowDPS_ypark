@@ -110,7 +110,7 @@ python -m utils.prepare_measurement \
     --noise_std 0.03 \
     --seed 0
 ```
-
+Add --save_preview for DIV2K, in order to save input image for prompt generation
 
 ### +) Extract Prompt Based on Image Menifest File/ Measurement
 ```
@@ -133,7 +133,7 @@ python utils/prepare_prompt.py \
     --output datasets/prepared/DIV2K_train800/prompts.txt
 ```
 
-### +) Call Solver for Precalculated Measurements
+### +) Inference for Precalculated Measurements
 ```
 python solve.py \
     --workdir experiments/0721_afhq_sr_avgpool \
@@ -143,6 +143,13 @@ python solve.py \
     --task sr_avgpool \
     --deg_scale 12 \
     --efficient_memory;
+```
+### +) Evaluation
+```
+python eval.py \
+    --path1 datasets/prepared/AFHQ_val1000/images \
+    --path2 experiments/0721_afhq_deblur_motion/recon 
+    --metric psnr ssim fid lpips ;
 ```
 
 ### Examples
