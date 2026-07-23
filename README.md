@@ -112,8 +112,8 @@ python -m utils.prepare_measurement \
 ```
 Add --save_preview for DIV2K, in order to save input image for prompt generation
 
-### +) Extract Prompt Based on Image Menifest File/ Measurement
-####    Installing SeeSR for DAPE prmopmt extraction
+### +) Extract Prompt Based on Image Manifest File / Measurement
+#### Installing SeeSR for DAPE prompt extraction
 ```
 cd .. ;
 git clone https://github.com/cswry/SeeSR.git ;
