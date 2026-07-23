@@ -12,6 +12,8 @@ import lpips
 from pytorch_fid import fid_score
 from pytorch_msssim import ssim
 
+import json
+
 
 def tag(name:str):
     def wrapper(func):
@@ -34,7 +36,12 @@ class Factory(object):
     def __call__(self, *args, **kwargs):
         output = []
         for _func in self._call_func:
+            metric_name = _func.tag
+            
+            print(f"[{metric_name}] caculation started\n")
             output.append(_func(*args, **kwargs))
+            print(f"[{metric_name}] caculation finished: {output[-1]}\n")
+
         return output
 
     def get_method(self, name: list[str]):
@@ -86,7 +93,7 @@ class Metric(Factory):
         return np.mean(values)
 
     @tag('fid')
-    def _fid(self, pred_path, label_path, **kwargs):
+    def _fid(self, label_path, pred_path, **kwargs):
         return fid_score.calculate_fid_given_paths([str(pred_path), str(label_path)], 50, 'cuda', 2048).item()
     
     @tag('lpips')
@@ -116,11 +123,25 @@ if __name__ == '__main__':
     parser.add_argument('--path1', type=Path)
     parser.add_argument('--path2', type=Path)
     parser.add_argument('--metric', type=str, nargs='+')
-    parser.add_argument('--prompt', type=str)
+    # parser.add_argument('--prompt', type=str)
     args = parser.parse_args()
 
     metric = Metric(args.metric)
-    output = metric(args.path1, args.path2, prompt=args.prompt)
+    output = metric(args.path1, args.path2)  #, prompt=args.prompt)
 
+    result = {}
     for m, o in zip(args.metric, output):
         print(f'{m}: {o}')
+        result[m] = float(o)
+        
+    save_path = None
+    for p in (args.path1, args.path2):
+        if p.name == "recon":
+            save_path = p.parent / "eval_result.json"
+            break
+    if save_path is None:
+        save_path = Path("/temp_result.json")
+    with open(save_path, "w") as f:
+        json.dump(result, f, indent = 4)
+    
+    print(f"Saved evaluation result to {save_path}\n")
